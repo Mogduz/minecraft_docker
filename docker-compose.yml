@@ -2,20 +2,26 @@ services:
   minecraft:
     build:
       context: .
-    image: minecraft-java:1.21.11
-    container_name: minecraft-java
+      args:
+        MC_VERSION: ${MC_VERSION}
+        FABRIC_LOADER_VERSION: ${FABRIC_LOADER_VERSION}
+        FABRIC_INSTALLER_VERSION: ${FABRIC_INSTALLER_VERSION}
+        FORGE_VERSION: ${FORGE_VERSION}
+        NEOFORGE_VERSION: ${NEOFORGE_VERSION}
+    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    container_name: ${CONTAINER_NAME}
     ports:
-      - "25565:25565"
+      - "${MC_PORT}:25565"
     environment:
-      EULA: "TRUE"
-      SERVER_TYPE: "vanilla"
-      JVM_OPTS: "-Xms2G -Xmx4G"
+      EULA: "${EULA}"
+      SERVER_TYPE: "${SERVER_TYPE}"
+      JVM_OPTS: "${JVM_OPTS}"
     volumes:
-      - ./minecraft/config:/data/config
-      - ./minecraft/world:/data/world
-      - ./minecraft/mods:/data/mods
-      - ./minecraft/resourcepacks:/data/resourcepacks
-      - ./minecraft/logs:/data/logs
-    restart: unless-stopped
+      - ${HOST_CONFIG_DIR}:/data/config
+      - ${HOST_WORLD_DIR}:/data/world
+      - ${HOST_MODS_DIR}:/data/mods
+      - ${HOST_RESOURCEPACKS_DIR}:/data/resourcepacks
+      - ${HOST_LOGS_DIR}:/data/logs
+    restart: ${RESTART_POLICY}
     stdin_open: true
     tty: true
