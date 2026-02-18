@@ -1,0 +1,21 @@
+services:
+  minecraft:
+    build:
+      context: .
+    image: minecraft-java:1.21.11
+    container_name: minecraft-java
+    ports:
+      - "25565:25565"
+    environment:
+      EULA: "TRUE"
+      SERVER_TYPE: "vanilla"
+      JVM_OPTS: "-Xms2G -Xmx4G"
+    volumes:
+      - ./minecraft/config:/data/config
+      - ./minecraft/world:/data/world
+      - ./minecraft/mods:/data/mods
+      - ./minecraft/resourcepacks:/data/resourcepacks
+      - ./minecraft/logs:/data/logs
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
