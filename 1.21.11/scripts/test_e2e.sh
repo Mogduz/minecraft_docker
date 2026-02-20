@@ -10,6 +10,7 @@ TEST_ENV_FILE=".tmp/.env.test"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.test.yml)
 COMPOSE_BASE=(docker compose "${COMPOSE_FILES[@]}" --env-file "$TEST_ENV_FILE" -p "$PROJECT_NAME")
 KEEP_TMP_ON_FAILURE=1
+LOADERS=(vanilla fabric forge neoforge)
 
 compose() {
   "${COMPOSE_BASE[@]}" "$@"
@@ -77,47 +78,56 @@ prepare_tmp() {
   mkdir -p .tmp/minecraft/config .tmp/minecraft/world .tmp/minecraft/mods .tmp/minecraft/resourcepacks .tmp/minecraft/logs
 }
 
-write_env_base() {
-  cat > "$TEST_ENV_FILE" <<'ENV'
-EULA=TRUE
-SERVER_TYPE=vanilla
-JVM_OPTS=-Xms512M -Xmx1024M
-ENV
+reset_loader_state() {
+  rm -rf .tmp/minecraft/config .tmp/minecraft/world .tmp/minecraft/mods .tmp/minecraft/resourcepacks .tmp/minecraft/logs
+  prepare_tmp
 }
 
-write_env_with_rcon() {
+write_env() {
+  local loader="$1"
+  local rcon_enabled="$2"
   cat > "$TEST_ENV_FILE" <<'ENV'
 EULA=TRUE
-SERVER_TYPE=vanilla
+SERVER_TYPE=__SERVER_TYPE__
 JVM_OPTS=-Xms512M -Xmx1024M
+ENV
+  sed -i "s/__SERVER_TYPE__/${loader}/" "$TEST_ENV_FILE"
+  if [[ "$rcon_enabled" == "true" ]]; then
+    cat >> "$TEST_ENV_FILE" <<'ENV'
 RCON_ENABLED=TRUE
 RCON_PASSWORD=codex
 RCON_PORT=25575
 ENV
+  fi
 }
 
-run_test_without_rcon() {
-  echo "== Testlauf 1: ohne RCON =="
-  write_env_base
-  compose up -d --build
-  wait_for_healthy 300
-  docker exec minecraft-java say codex-smoke-test
-  wait_for_log_message "codex-smoke-test" 90
-  compose down --remove-orphans
-}
+run_loader_test() {
+  local loader="$1"
+  local rcon_enabled="$2"
+  local label="ohne RCON"
+  local log_marker="codex-${loader}-smoke-test"
 
-run_test_with_rcon() {
-  echo "== Testlauf 2: mit RCON =="
-  write_env_with_rcon
+  if [[ "$rcon_enabled" == "true" ]]; then
+    label="mit RCON"
+    log_marker="codex-${loader}-rcon-test"
+  fi
+
+  echo "== Test: ${loader} (${label}) =="
+  reset_loader_state
+  write_env "$loader" "$rcon_enabled"
   compose up -d --build
-  wait_for_healthy 300
-  docker exec minecraft-java say codex-rcon-test
-  wait_for_log_message "codex-rcon-test" 90
+  wait_for_healthy 600
+  docker exec minecraft-java say "$log_marker"
+  wait_for_log_message "$log_marker" 120
   compose down --remove-orphans
 }
 
 prepare_tmp
-run_test_without_rcon
-run_test_with_rcon
+for loader in "${LOADERS[@]}"; do
+  run_loader_test "$loader" "false"
+done
+
+run_loader_test "vanilla" "true"
+
 KEEP_TMP_ON_FAILURE=0
 echo "E2E-Tests erfolgreich."
