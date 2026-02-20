@@ -7,9 +7,9 @@ set -euo pipefail
 #   help
 #   stop
 #   ...
-if [[ $# -eq 0 && "$(basename "$0")" == "mc-cmd" ]]; then
+if [[ $# -eq 0 ]]; then
   echo "Usage: mc-cmd <minecraft command...>"
-  exit 1
+  exit 2
 fi
 
 if [[ "$(basename "$0")" == "mc-cmd" ]]; then
