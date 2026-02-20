@@ -9,6 +9,8 @@ fi
 source /opt/minecraft/versions.env
 
 SERVER_TYPE="$(echo "${SERVER_TYPE:-vanilla}" | tr '[:upper:]' '[:lower:]')"
+RCON_ENABLED="$(echo "${RCON_ENABLED:-FALSE}" | tr '[:lower:]' '[:upper:]')"
+RCON_PORT="${RCON_PORT:-25575}"
 
 mkdir -p /data/config /data/world /data/mods /data/resourcepacks /data/logs
 
@@ -36,6 +38,47 @@ for cfg in eula.txt server.properties whitelist.json ops.json banned-ips.json ba
   fi
   ln -sfn "/data/config/${cfg}" "/data/${cfg}"
 done
+
+upsert_property() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -F= -v k="$key" -v v="$value" '
+    BEGIN { updated = 0 }
+    $1 == k {
+      print k "=" v
+      updated = 1
+      next
+    }
+    { print }
+    END {
+      if (updated == 0) {
+        print k "=" v
+      }
+    }
+  ' "$file" > "$tmp_file"
+
+  mv "$tmp_file" "$file"
+}
+
+if [[ "$RCON_ENABLED" == "TRUE" ]]; then
+  if [[ -z "${RCON_PASSWORD:-}" ]]; then
+    echo "RCON_ENABLED=TRUE, aber RCON_PASSWORD ist nicht gesetzt."
+    exit 1
+  fi
+
+  if ! [[ "$RCON_PORT" =~ ^[0-9]+$ ]] || (( RCON_PORT < 1 || RCON_PORT > 65535 )); then
+    echo "Ungueltiger RCON_PORT: ${RCON_PORT}. Erwartet: 1-65535"
+    exit 1
+  fi
+
+  upsert_property "enable-rcon" "true" /data/config/server.properties
+  upsert_property "rcon.password" "${RCON_PASSWORD}" /data/config/server.properties
+  upsert_property "rcon.port" "${RCON_PORT}" /data/config/server.properties
+fi
 
 link_runtime_paths() {
   local runtime_dir="$1"
