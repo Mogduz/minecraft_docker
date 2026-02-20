@@ -22,5 +22,12 @@ else
   fi
 fi
 
-# Send command to the main server process stdin.
+RCON_ENABLED="$(echo "${RCON_ENABLED:-FALSE}" | tr '[:lower:]' '[:upper:]')"
+RCON_PORT="${RCON_PORT:-25575}"
+
+if [[ "$RCON_ENABLED" == "TRUE" ]] && command -v mcrcon >/dev/null 2>&1 && [[ -n "${RCON_PASSWORD:-}" ]]; then
+  exec mcrcon -H 127.0.0.1 -P "$RCON_PORT" -p "$RCON_PASSWORD" "$cmd"
+fi
+
+# Fallback: send command to the main server process stdin.
 printf '%s\n' "$cmd" > /proc/1/fd/0
