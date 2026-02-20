@@ -98,29 +98,66 @@ link_runtime_paths() {
 JAVA_ARGS="${JVM_OPTS:-"-Xms1G -Xmx2G"}"
 read -r -a JAVA_ARGS_ARR <<< "$JAVA_ARGS"
 
-case "$SERVER_TYPE" in
-  vanilla)
-    cd /data
-    exec java "${JAVA_ARGS_ARR[@]}" -jar /opt/minecraft/dist/vanilla-server.jar nogui
-    ;;
-  fabric)
-    cd /data
-    exec java "${JAVA_ARGS_ARR[@]}" -jar /opt/minecraft/dist/fabric-server.jar nogui
-    ;;
-  forge)
-    link_runtime_paths /opt/minecraft/runtimes/forge
-    cd /opt/minecraft/runtimes/forge
-    printf '%s\n' "$JAVA_ARGS" > user_jvm_args.txt
-    exec ./run.sh nogui
-    ;;
-  neoforge)
-    link_runtime_paths /opt/minecraft/runtimes/neoforge
-    cd /opt/minecraft/runtimes/neoforge
-    printf '%s\n' "$JAVA_ARGS" > user_jvm_args.txt
-    exec ./run.sh nogui
-    ;;
-  *)
-    echo "Unbekannter SERVER_TYPE: ${SERVER_TYPE}. Erlaubt: vanilla, fabric, forge, neoforge"
-    exit 1
-    ;;
-esac
+SERVER_PID=""
+STDIN_PIPE="/tmp/minecraft.stdin"
+
+start_server() {
+  rm -f "$STDIN_PIPE"
+  mkfifo "$STDIN_PIPE"
+  exec 3<>"$STDIN_PIPE"
+
+  case "$SERVER_TYPE" in
+    vanilla)
+      cd /data
+      java "${JAVA_ARGS_ARR[@]}" -jar /opt/minecraft/dist/vanilla-server.jar nogui <&3 &
+      ;;
+    fabric)
+      cd /data
+      java "${JAVA_ARGS_ARR[@]}" -jar /opt/minecraft/dist/fabric-server.jar nogui <&3 &
+      ;;
+    forge)
+      link_runtime_paths /opt/minecraft/runtimes/forge
+      cd /opt/minecraft/runtimes/forge
+      printf '%s\n' "$JAVA_ARGS" > user_jvm_args.txt
+      ./run.sh nogui <&3 &
+      ;;
+    neoforge)
+      link_runtime_paths /opt/minecraft/runtimes/neoforge
+      cd /opt/minecraft/runtimes/neoforge
+      printf '%s\n' "$JAVA_ARGS" > user_jvm_args.txt
+      ./run.sh nogui <&3 &
+      ;;
+    *)
+      echo "Unbekannter SERVER_TYPE: ${SERVER_TYPE}. Erlaubt: vanilla, fabric, forge, neoforge"
+      exit 1
+      ;;
+  esac
+
+  SERVER_PID="$!"
+  mkdir -p /run
+  printf '%s\n' "$SERVER_PID" > /run/minecraft.pid
+}
+
+forward_and_wait() {
+  local signal_name="$1"
+
+  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "-${signal_name}" "$SERVER_PID" 2>/dev/null || kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID"
+    rm -f /run/minecraft.pid "$STDIN_PIPE"
+    exit $?
+  fi
+
+  rm -f /run/minecraft.pid "$STDIN_PIPE"
+  exit 1
+}
+
+trap 'forward_and_wait TERM' TERM
+trap 'forward_and_wait INT' INT
+trap 'forward_and_wait HUP' HUP
+
+start_server
+wait "$SERVER_PID"
+exit_code=$?
+rm -f /run/minecraft.pid "$STDIN_PIPE"
+exit "$exit_code"
