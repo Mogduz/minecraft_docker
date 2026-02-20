@@ -8,6 +8,8 @@ Thumbs.db
 
 # Local environment helpers
 .envrc
+.env
+.tmp/
 
 # Python cache (falls lokale Scripts genutzt werden)
 __pycache__/
