@@ -11,6 +11,22 @@ COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.test.yml)
 COMPOSE_BASE=(docker compose "${COMPOSE_FILES[@]}" --env-file "$TEST_ENV_FILE" -p "$PROJECT_NAME")
 KEEP_TMP_ON_FAILURE=1
 LOADERS=(vanilla fabric forge neoforge)
+ALIASES=(
+  help stop reload list say seed me msg teammsg tm tell w
+  ban ban-ip banlist pardon pardon-ip kick op deop
+  whitelist save-all save-on save-off
+  time weather difficulty defaultgamemode gamemode gamerule
+  effect enchant experience xp give clear item
+  teleport tp spreadplayers summon kill
+  setworldspawn spawnpoint setblock fill clone placeblock
+  setidletimeout setmaxplayers publish
+  function schedule trigger recipe advancement loot
+  scoreboard team bossbar title tellraw
+  datapack debug forceload jfr perf
+  locate locatebiome locatepoi playsound stopsound
+  particle damage ride tag attribute data
+  worldborder
+)
 
 compose() {
   "${COMPOSE_BASE[@]}" "$@"
@@ -117,9 +133,32 @@ run_loader_test() {
   write_env "$loader" "$rcon_enabled"
   compose up -d --build
   wait_for_healthy 600
+  test_aliases
   docker exec minecraft-java say "$log_marker"
   wait_for_log_message "$log_marker" 120
   compose down --remove-orphans
+}
+
+test_aliases() {
+  local alias_name
+  local alias_path
+  local resolved_path
+
+  for alias_name in "${ALIASES[@]}"; do
+    alias_path="/usr/local/bin/${alias_name}"
+    if ! docker exec minecraft-java sh -lc "[ -x '${alias_path}' ]"; then
+      echo "Alias fehlt oder ist nicht ausfuehrbar: ${alias_path}" >&2
+      print_failure_diagnostics
+      return 1
+    fi
+
+    resolved_path="$(docker exec minecraft-java sh -lc "readlink -f '${alias_path}'" 2>/dev/null || true)"
+    if [[ "$resolved_path" != "/usr/local/bin/mc-cmd" ]]; then
+      echo "Alias zeigt nicht auf mc-cmd: ${alias_path} -> ${resolved_path}" >&2
+      print_failure_diagnostics
+      return 1
+    fi
+  done
 }
 
 prepare_tmp
@@ -127,7 +166,9 @@ for loader in "${LOADERS[@]}"; do
   run_loader_test "$loader" "false"
 done
 
-run_loader_test "vanilla" "true"
+for loader in "${LOADERS[@]}"; do
+  run_loader_test "$loader" "true"
+done
 
 KEEP_TMP_ON_FAILURE=0
 echo "E2E-Tests erfolgreich."
