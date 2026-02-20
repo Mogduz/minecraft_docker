@@ -32,7 +32,7 @@ RUN apt-get update \
 RUN mkdir -p /opt/minecraft/dist /opt/minecraft/runtimes /data/config /data/world /data/mods /data/resourcepacks /data/logs
 
 # Download and cache vanilla, fabric, forge and neoforge server artifacts.
-RUN curl_common=(--fail --location --silent --show-error --proto '=https' --tlsv1.2); \
+RUN curl_common=(--fail --location --silent --show-error --retry 3 --connect-timeout 10 --max-time 300 --proto '=https' --tlsv1.2); \
     download_with_optional_sha() { \
       local url="$1" out="$2" sha_url="${url}.sha1"; \
       curl "${curl_common[@]}" "$url" -o "$out"; \
