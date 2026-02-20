@@ -33,16 +33,35 @@ RUN mkdir -p /opt/minecraft/dist /opt/minecraft/runtimes /data/config /data/worl
 
 # Download and cache vanilla, fabric, forge and neoforge server artifacts.
 RUN curl_common=(--fail --location --silent --show-error --retry 3 --connect-timeout 10 --max-time 300 --proto '=https' --tlsv1.2); \
+    MC_MAJOR_MINOR="$(awk -F. '{print $1 "." $2}' <<<"$MC_VERSION")"; \
+    MC_MAJOR_MINOR_ESC="${MC_MAJOR_MINOR//./\\.}"; \
+    NEOFORGE_LINE="$(awk -F. '{print $2 "." $3}' <<<"$MC_VERSION")"; \
+    NEOFORGE_MAJOR="$(awk -F. '{print $2}' <<<"$MC_VERSION")"; \
+    assert_nonempty_file() { \
+      local file_path="$1"; \
+      if [[ ! -s "$file_path" ]]; then \
+        echo "Download validation failed: '$file_path' is missing or empty." >&2; \
+        exit 1; \
+      fi; \
+    }; \
+    assert_archive_readable() { \
+      local file_path="$1"; \
+      if ! unzip -tqq "$file_path" >/dev/null; then \
+        echo "Download validation failed: '$file_path' is not a readable archive (jar/zip)." >&2; \
+        exit 1; \
+      fi; \
+    }; \
     download_with_optional_sha() { \
-      local url="$1" out="$2" sha_url="${url}.sha1"; \
+      local url="$1" out="$2"; \
+      local sha_url="${url}.sha1"; \
       curl "${curl_common[@]}" "$url" -o "$out"; \
-      [[ -s "$out" ]]; \
+      assert_nonempty_file "$out"; \
       local expected_sha=""; \
       expected_sha="$(curl "${curl_common[@]}" "$sha_url" 2>/dev/null | tr -d '\\r\\n' || true)"; \
       if [[ "$expected_sha" =~ ^[a-fA-F0-9]{40}$ ]]; then \
         echo "$expected_sha  $out" | sha1sum -c -; \
       else \
-        unzip -tqq "$out" >/dev/null; \
+        assert_archive_readable "$out"; \
       fi; \
     }; \
     VANILLA_MANIFEST_URL="$(curl "${curl_common[@]}" https://piston-meta.mojang.com/mc/game/version_manifest_v2.json | jq -r --arg v "$MC_VERSION" '.versions[] | select(.id == $v) | .url')"; \
@@ -52,22 +71,32 @@ RUN curl_common=(--fail --location --silent --show-error --retry 3 --connect-tim
     VANILLA_SERVER_SHA1="$(jq -r '.downloads.server.sha1' <<<"$VANILLA_MANIFEST")"; \
     [[ -n "$VANILLA_SERVER_URL" ]]; \
     curl "${curl_common[@]}" "$VANILLA_SERVER_URL" -o /opt/minecraft/dist/vanilla-server.jar; \
-    [[ -s /opt/minecraft/dist/vanilla-server.jar ]]; \
+    assert_nonempty_file /opt/minecraft/dist/vanilla-server.jar; \
     echo "$VANILLA_SERVER_SHA1  /opt/minecraft/dist/vanilla-server.jar" | sha1sum -c -; \
     if [[ "$FABRIC_LOADER_VERSION" == "auto" ]]; then \
-      FABRIC_LOADER_VERSION="$(curl "${curl_common[@]}" https://meta.fabricmc.net/v2/versions/loader | jq -r '.[] | select(.stable == true) | .version' | head -n1)"; \
+      FABRIC_LOADER_VERSION="$(curl "${curl_common[@]}" https://meta.fabricmc.net/v2/versions/loader | jq -r '[.[] | select(.stable == true) | .version] | first // empty')"; \
     fi; \
     if [[ "$FABRIC_INSTALLER_VERSION" == "auto" ]]; then \
-      FABRIC_INSTALLER_VERSION="$(curl "${curl_common[@]}" https://meta.fabricmc.net/v2/versions/installer | jq -r '.[] | select(.stable == true) | .version' | head -n1)"; \
+      FABRIC_INSTALLER_VERSION="$(curl "${curl_common[@]}" https://meta.fabricmc.net/v2/versions/installer | jq -r '[.[] | select(.stable == true) | .version] | first // empty')"; \
     fi; \
     [[ -n "$FABRIC_LOADER_VERSION" ]]; \
     [[ -n "$FABRIC_INSTALLER_VERSION" ]]; \
-    FABRIC_URL="https://meta.fabricmc.net/v2/versions/loader/${MC_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"; \
+    FABRIC_GAME_VERSION="$MC_VERSION"; \
+    FABRIC_GAME_VERSIONS="$(curl "${curl_common[@]}" https://meta.fabricmc.net/v2/versions/game | jq -r '.[].version')"; \
+    if ! grep -Fxq "$FABRIC_GAME_VERSION" <<<"$FABRIC_GAME_VERSIONS"; then \
+      FABRIC_GAME_VERSION="$(grep -E "^${MC_MAJOR_MINOR_ESC}\\.[0-9]+$" <<<"$FABRIC_GAME_VERSIONS" | sort -V | tail -n1 || true)"; \
+    fi; \
+    [[ -n "$FABRIC_GAME_VERSION" ]]; \
+    FABRIC_URL="https://meta.fabricmc.net/v2/versions/loader/${FABRIC_GAME_VERSION}/${FABRIC_LOADER_VERSION}/${FABRIC_INSTALLER_VERSION}/server/jar"; \
     curl "${curl_common[@]}" "$FABRIC_URL" -o /opt/minecraft/dist/fabric-server.jar; \
-    [[ -s /opt/minecraft/dist/fabric-server.jar ]]; \
-    unzip -tqq /opt/minecraft/dist/fabric-server.jar >/dev/null; \
+    assert_nonempty_file /opt/minecraft/dist/fabric-server.jar; \
+    assert_archive_readable /opt/minecraft/dist/fabric-server.jar; \
+    FORGE_VERSIONS="$(curl "${curl_common[@]}" https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml | tr -d '\r' | sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p')"; \
     if [[ "$FORGE_VERSION" == "auto" ]]; then \
-      FORGE_FULL_VERSION="$(curl "${curl_common[@]}" https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml | tr -d '\\r' | sed -n 's|.*<version>\\('"$MC_VERSION"'-[^<]*\\)</version>.*|\\1|p' | tail -n1)"; \
+      FORGE_FULL_VERSION="$(grep -E "^${MC_VERSION//./\\.}-" <<<"$FORGE_VERSIONS" | tail -n1 || true)"; \
+      if [[ -z "$FORGE_FULL_VERSION" ]]; then \
+        FORGE_FULL_VERSION="$(grep -E "^${MC_MAJOR_MINOR_ESC}\\.[0-9]+-" <<<"$FORGE_VERSIONS" | sort -V | tail -n1 || true)"; \
+      fi; \
     else \
       case "$FORGE_VERSION" in \
         "$MC_VERSION"-*) FORGE_FULL_VERSION="$FORGE_VERSION" ;; \
@@ -78,9 +107,12 @@ RUN curl_common=(--fail --location --silent --show-error --retry 3 --connect-tim
     download_with_optional_sha "https://maven.minecraftforge.net/net/minecraftforge/forge/${FORGE_FULL_VERSION}/forge-${FORGE_FULL_VERSION}-installer.jar" "/opt/minecraft/dist/forge-installer.jar"; \
     mkdir -p /opt/minecraft/runtimes/forge; \
     (cd /opt/minecraft/runtimes/forge && java -jar /opt/minecraft/dist/forge-installer.jar --installServer); \
+    NEOFORGE_VERSIONS="$(curl "${curl_common[@]}" https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml | tr -d '\r' | sed -n 's|.*<version>\([^<]*\)</version>.*|\1|p')"; \
     if [[ "$NEOFORGE_VERSION" == "auto" ]]; then \
-      NEOFORGE_LINE="$(awk -F. '{print $2 "." $3}' <<<"$MC_VERSION")"; \
-      NEOFORGE_VERSION="$(curl "${curl_common[@]}" https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml | tr -d '\\r' | sed -n 's|.*<version>\\([^<]*\\)</version>.*|\\1|p' | grep -E "^${NEOFORGE_LINE}\\." | tail -n1)"; \
+      NEOFORGE_VERSION="$(grep -E "^${NEOFORGE_LINE//./\\.}\\." <<<"$NEOFORGE_VERSIONS" | sort -V | tail -n1 || true)"; \
+      if [[ -z "$NEOFORGE_VERSION" ]]; then \
+        NEOFORGE_VERSION="$(grep -E "^${NEOFORGE_MAJOR//./\\.}\\." <<<"$NEOFORGE_VERSIONS" | sort -V | tail -n1 || true)"; \
+      fi; \
     fi; \
     [[ -n "$NEOFORGE_VERSION" ]]; \
     download_with_optional_sha "https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}-installer.jar" "/opt/minecraft/dist/neoforge-installer.jar"; \
