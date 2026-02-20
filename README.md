@@ -1,10 +1,9 @@
 # minecraft_docker
 
-Minecraft Java Server `1.21.11` auf `ubuntu:24.04` mit persistenter Auslagerung von Config, World, Mods, Resourcepacks und Logs.
+Minecraft Java Server (`ubuntu:24.04`) mit persistenter Auslagerung von Config, World, Mods, Resourcepacks und Logs.
 Beim Build werden Artefakte fuer `vanilla`, `fabric`, `forge` und `neoforge` heruntergeladen und vorgehalten.
-Compose-Variablen liegen in `.env`.
 
-## Start
+## Quickstart
 
 ```bash
 docker compose up -d --build
@@ -20,37 +19,71 @@ Beim Start steht der Container zunaechst auf `health: starting`, im Normalbetrie
 
 ## Konfiguration ueber `.env`
 
-Passe in `.env` bei Bedarf an:
+Wenn noch keine lokale `.env` vorhanden ist, kann `.env.example` als Vorlage genutzt werden.
 
-- Runtime: `SERVER_TYPE`, `JVM_OPTS`, `EULA`, `MC_PORT`, `CONTAINER_NAME`
-- Image: `IMAGE_NAME`, `IMAGE_TAG`
-- Mounts sind fest in `docker-compose.yml` gesetzt (`./minecraft/...`).
+Wichtige Runtime-Variablen:
 
-Build-Versionen (`MC_VERSION`, `FABRIC_*`, `FORGE_VERSION`, `NEOFORGE_VERSION`) bleiben in der `Dockerfile`.
+- `SERVER_TYPE` (`vanilla`, `fabric`, `forge`, `neoforge`)
+- `JVM_OPTS`
+- `EULA`
+- `MC_PORT`
+- `CONTAINER_NAME`
+- `RCON_ENABLED` (Default `FALSE`)
+- `RCON_PASSWORD` (nur noetig bei aktiviertem RCON)
+- `RCON_PORT` (Default `25575`)
 
-## Servertyp waehlen
+Image/Container:
 
-- Auswahl ueber `SERVER_TYPE` in `.env`
-- Erlaubte Werte: `vanilla`, `fabric`, `forge`, `neoforge`
-- Default: `vanilla`
+- `IMAGE_NAME`
+- `IMAGE_TAG`
+- `RESTART_POLICY`
+
+Build-Argumente (werden via Compose in den Build durchgereicht):
+
+- `MC_VERSION`
+- `FABRIC_LOADER_VERSION`
+- `FABRIC_INSTALLER_VERSION`
+- `FORGE_VERSION`
+- `NEOFORGE_VERSION`
+
+## RCON (optional, per Profil)
+
+Standardmaessig ist kein zusaetzlicher RCON-Port nach aussen offen.
+
+RCON mit Port-Freigabe aktivieren:
+
+```bash
+docker compose --profile rcon up -d --build
+```
+
+Dafuer in `.env` mindestens setzen:
+
+- `RCON_ENABLED=TRUE`
+- `RCON_PASSWORD=<dein-passwort>`
+- optional `RCON_PORT=25575`
+
+`mc-cmd` nutzt automatisch RCON, wenn `RCON_ENABLED=TRUE`, `RCON_PASSWORD` gesetzt ist und `mcrcon` im Container verfuegbar ist. Sonst faellt es auf den bisherigen STDIN-Mechanismus zurueck.
 
 ## Persistente Daten
 
-- Config: `./minecraft/config` (z. B. `server.properties`, `eula.txt`, `ops.json`)
-- World: `./minecraft/world`
-- Mods: `./minecraft/mods`
-- Resourcepacks: `./minecraft/resourcepacks`
-- Logs: `./minecraft/logs`
+Bind-Mounts:
 
-Stoppen:
+- `./minecraft/config:/data/config`
+- `./minecraft/world:/data/world`
+- `./minecraft/mods:/data/mods`
+- `./minecraft/resourcepacks:/data/resourcepacks`
+- `./minecraft/logs:/data/logs`
 
-```bash
-docker compose down
-```
+Empfohlene Repo-Hygiene:
+
+- Persistente Laufzeitdaten unter `minecraft/` sind in `.gitignore` ausgenommen.
+- Auch `minecraft/config` ist ignoriert (enthaelt benutzerspezifische Daten wie `server.properties`, `ops.json`, Whitelist, usw.).
+- Nur `.gitkeep`-Dateien bleiben versioniert, damit die Ordnerstruktur erhalten bleibt.
+- `.env` ist ignoriert; `.env.example` bleibt versioniert.
 
 ## Befehle in die Server-Konsole senden
 
-Direkt als Alias-Befehl im Container (Beispiel):
+Direkt als Alias-Befehl im Container:
 
 ```bash
 docker exec -it minecraft-java help
@@ -63,4 +96,10 @@ Fuer beliebige (auch modded) Commands:
 
 ```bash
 docker exec -it minecraft-java mc-cmd "<dein command>"
+```
+
+## Stoppen
+
+```bash
+docker compose down
 ```
