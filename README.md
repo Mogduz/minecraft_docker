@@ -19,7 +19,7 @@ Beim Start steht der Container zunaechst auf `health: starting`, im Normalbetrie
 
 ## Konfiguration ueber `.env`
 
-Wenn noch keine lokale `.env` vorhanden ist, kann `.env.example` als Vorlage genutzt werden.
+`.env` ist Bestandteil des Repos (enthaelt keine Secrets) und kann direkt angepasst werden. `.env.example` ist optional als Referenz/Vorlage.
 
 Wichtige Runtime-Variablen:
 
@@ -79,7 +79,7 @@ Empfohlene Repo-Hygiene:
 - Persistente Laufzeitdaten unter `minecraft/` sind in `.gitignore` ausgenommen.
 - Auch `minecraft/config` ist ignoriert (enthaelt benutzerspezifische Daten wie `server.properties`, `ops.json`, Whitelist, usw.).
 - Nur `.gitkeep`-Dateien bleiben versioniert, damit die Ordnerstruktur erhalten bleibt.
-- `.env` ist ignoriert; `.env.example` bleibt versioniert.
+- `.env` bleibt versioniert; `.env.example` ist eine optionale Referenz.
 
 ## Befehle in die Server-Konsole senden
 
@@ -95,8 +95,10 @@ docker exec -it minecraft-java stop
 Fuer beliebige (auch modded) Commands:
 
 ```bash
-docker exec -it minecraft-java mc-cmd "<dein command>"
+docker exec -it minecraft-java mc-cmd "say Hello from mc-cmd"
 ```
+
+`mc-cmd` nutzt RCON wenn aktiviert, sonst den STDIN-Fallback.
 
 ## Stoppen
 
