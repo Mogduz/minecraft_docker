@@ -5,6 +5,16 @@ Beim Build werden Artefakte fuer `vanilla`, `fabric`, `forge` und `neoforge` her
 
 ## Quickstart
 
+`.env` zuerst aus Vorlage anlegen:
+
+```bash
+cp .env.example .env
+```
+
+Dann `EULA=TRUE` in `.env` setzen. Ohne diese Einstellung startet der Container nicht.
+
+Starten:
+
 ```bash
 docker compose up -d --build
 ```
@@ -19,7 +29,7 @@ Beim Start steht der Container zunaechst auf `health: starting`, im Normalbetrie
 
 ## Konfiguration ueber `.env`
 
-`.env` ist Bestandteil des Repos (enthaelt keine Secrets) und kann direkt angepasst werden. `.env.example` ist optional als Referenz/Vorlage.
+`.env` ist absichtlich nicht versioniert. Vorlage ist `.env.example`.
 
 Wichtige Runtime-Variablen:
 
@@ -79,7 +89,8 @@ Empfohlene Repo-Hygiene:
 - Persistente Laufzeitdaten unter `minecraft/` sind in `.gitignore` ausgenommen.
 - Auch `minecraft/config` ist ignoriert (enthaelt benutzerspezifische Daten wie `server.properties`, `ops.json`, Whitelist, usw.).
 - Nur `.gitkeep`-Dateien bleiben versioniert, damit die Ordnerstruktur erhalten bleibt.
-- `.env` bleibt versioniert; `.env.example` ist eine optionale Referenz.
+- `.env` bleibt lokal und wird nicht eingecheckt.
+- `.env.example` ist die versionierte Vorlage.
 
 ## Befehle in die Server-Konsole senden
 
@@ -104,4 +115,12 @@ docker exec -it minecraft-java mc-cmd "say Hello from mc-cmd"
 
 ```bash
 docker compose down
+```
+
+## Tests
+
+E2E-Tests laufen in WSL mit lokalem Docker:
+
+```bash
+./scripts/test_e2e.sh
 ```
