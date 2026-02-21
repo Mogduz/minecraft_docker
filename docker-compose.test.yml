@@ -1,5 +1,6 @@
 services:
   minecraft:
+    ports: []
     volumes:
       - ./.tmp/minecraft/config:/data/config
       - ./.tmp/minecraft/world:/data/world
