@@ -131,37 +131,48 @@ run_loader_test() {
   echo "== Test: ${loader} (${label}) =="
   reset_loader_state
   write_env "$loader" "$rcon_enabled"
-  compose up -d --build
+  compose up -d
   wait_for_healthy 600
   test_aliases
-  docker exec minecraft-java say "$log_marker"
+  set +e
+  timeout 30 docker exec minecraft-java mc-cmd "say $log_marker"
+  cmd_rc=$?
+  set -e
+  if [[ "$cmd_rc" -ne 0 && "$cmd_rc" -ne 124 ]]; then
+    echo "Senden des Testbefehls fehlgeschlagen (Exit $cmd_rc): $log_marker" >&2
+    print_failure_diagnostics
+    return 1
+  fi
+  if [[ "$cmd_rc" -eq 124 ]]; then
+    echo "Hinweis: mc-cmd Timeout bei '$log_marker', pruefe Log-Nachweis weiter."
+  fi
   wait_for_log_message "$log_marker" 120
   compose down --remove-orphans
 }
 
 test_aliases() {
-  local alias_name
-  local alias_path
-  local resolved_path
+  local aliases_joined
+  aliases_joined="${ALIASES[*]}"
 
-  for alias_name in "${ALIASES[@]}"; do
-    alias_path="/usr/local/bin/${alias_name}"
-    if ! docker exec minecraft-java sh -lc "[ -x '${alias_path}' ]"; then
-      echo "Alias fehlt oder ist nicht ausfuehrbar: ${alias_path}" >&2
-      print_failure_diagnostics
-      return 1
-    fi
-
-    resolved_path="$(docker exec minecraft-java sh -lc "readlink -f '${alias_path}'" 2>/dev/null || true)"
-    if [[ "$resolved_path" != "/usr/local/bin/mc-cmd" ]]; then
-      echo "Alias zeigt nicht auf mc-cmd: ${alias_path} -> ${resolved_path}" >&2
-      print_failure_diagnostics
-      return 1
-    fi
-  done
+  if ! docker exec -e CODEX_ALIASES="$aliases_joined" minecraft-java sh -lc '
+    set -e
+    for alias_name in $CODEX_ALIASES; do
+      alias_path="/usr/local/bin/${alias_name}"
+      [ -x "$alias_path" ] || { echo "Alias fehlt oder ist nicht ausfuehrbar: $alias_path" >&2; exit 1; }
+      resolved_path="$(readlink -f "$alias_path" 2>/dev/null || true)"
+      [ "$resolved_path" = "/usr/local/bin/mc-cmd" ] || { echo "Alias zeigt nicht auf mc-cmd: $alias_path -> $resolved_path" >&2; exit 1; }
+    done
+  '; then
+    print_failure_diagnostics
+    return 1
+  fi
 }
 
 prepare_tmp
+write_env "vanilla" "false"
+compose build
+compose down --remove-orphans || true
+
 for loader in "${LOADERS[@]}"; do
   run_loader_test "$loader" "false"
 done
