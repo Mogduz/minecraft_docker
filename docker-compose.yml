@@ -1,44 +1,26 @@
-x-minecraft-common: &minecraft-common
-  image: minecraft-java:1.21.11
-  container_name: ${CONTAINER_NAME:-minecraft-java}
-  environment: &minecraft-environment
-    EULA: "${EULA:-FALSE}"
-    SERVER_TYPE: "${SERVER_TYPE:-vanilla}"
-    JVM_OPTS: "${JVM_OPTS:--Xms2G -Xmx4G}"
-    RCON_ENABLED: "${RCON_ENABLED:-FALSE}"
-    RCON_PASSWORD: "${RCON_PASSWORD:-}"
-    RCON_PORT: "${RCON_PORT:-25575}"
-  volumes: &minecraft-volumes
-    - ./1.21.11/minecraft/config:/data/config
-    - ./1.21.11/minecraft/world:/data/world
-    - ./1.21.11/minecraft/mods:/data/mods
-    - ./1.21.11/minecraft/resourcepacks:/data/resourcepacks
-    - ./1.21.11/minecraft/logs:/data/logs
-  restart: ${RESTART_POLICY:-unless-stopped}
-
 services:
   minecraft:
-    <<: *minecraft-common
-    stdin_open: true
-    tty: true
     build:
       context: .
-      dockerfile: ./1.21.11/Dockerfile
+      dockerfile: ./${MC_VERSION}/Dockerfile
+    image: minecraft-java:1.21.11
+    container_name: ${CONTAINER_NAME:-minecraft-java}
+    volumes:
+      - ./minecraft/config:/data/config
+      - ./minecraft/world:/data/world
+      - ./minecraft/mods:/data/mods
+      - ./minecraft/resourcepacks:/data/resourcepacks
+      - ./minecraft/logs:/data/logs
+    stdin_open: true
+    tty: true
     ports:
       - "${MC_PORT:-25565}:25565"
-
-  minecraft-rcon:
-    image: alpine/socat:1.8.0.3
-    container_name: ${CONTAINER_NAME:-minecraft-java}-rcon
-    profiles:
-      - rcon
-    depends_on:
-      - minecraft
-    command:
-      - "-d"
-      - "-d"
-      - "TCP-LISTEN:25575,fork,reuseaddr"
-      - "TCP:minecraft:${RCON_PORT:-25575}"
-    ports:
       - "${RCON_PORT:-25575}:25575"
+    environment:
+      EULA: "${EULA:-FALSE}"
+      SERVER_TYPE: "${SERVER_TYPE:-vanilla}"
+      JVM_OPTS: "${JVM_OPTS:--Xms2G -Xmx4G}"
+      RCON_ENABLED: "${RCON_ENABLED:-FALSE}"
+      RCON_PASSWORD: "${RCON_PASSWORD:-}"
+      RCON_PORT: "${RCON_PORT:-25575}"
     restart: ${RESTART_POLICY:-unless-stopped}
