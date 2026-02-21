@@ -6,10 +6,15 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 cd "$REPO_ROOT"
 
 PROJECT_NAME="codex_e2e"
-TEST_ENV_FILE=".tmp/.env.test"
+TEST_ENV_FILE="1.21.11/.env.test"
+TEST_CONTAINER_NAME="minecraft-java-e2e"
 COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.test.yml)
 COMPOSE_BASE=(docker compose "${COMPOSE_FILES[@]}" --env-file "$TEST_ENV_FILE" -p "$PROJECT_NAME")
 KEEP_TMP_ON_FAILURE=1
+CURRENT_SERVER_TYPE="vanilla"
+CURRENT_RCON_ENABLED="FALSE"
+CURRENT_RCON_PASSWORD="codex"
+CURRENT_RCON_PORT="25575"
 LOADERS=(vanilla fabric forge neoforge)
 ALIASES=(
   help stop reload list say seed me msg teammsg tm tell w
@@ -29,13 +34,18 @@ ALIASES=(
 )
 
 compose() {
+  SERVER_TYPE="$CURRENT_SERVER_TYPE" \
+  CONTAINER_NAME="$TEST_CONTAINER_NAME" \
+  RCON_ENABLED="$CURRENT_RCON_ENABLED" \
+  RCON_PASSWORD="$CURRENT_RCON_PASSWORD" \
+  RCON_PORT="$CURRENT_RCON_PORT" \
   "${COMPOSE_BASE[@]}" "$@"
 }
 
 print_failure_diagnostics() {
   compose ps || true
-  docker logs minecraft-java --tail 200 || true
-  docker inspect --format '{{json .State.Health}}' minecraft-java || true
+  docker logs "$TEST_CONTAINER_NAME" --tail 200 || true
+  docker inspect --format '{{json .State.Health}}' "$TEST_CONTAINER_NAME" || true
 }
 
 cleanup() {
@@ -54,7 +64,7 @@ wait_for_healthy() {
 
   while true; do
     local status
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' minecraft-java 2>/dev/null || true)"
+    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$TEST_CONTAINER_NAME" 2>/dev/null || true)"
     if [[ "$status" == "healthy" ]]; then
       return 0
     fi
@@ -76,7 +86,7 @@ wait_for_log_message() {
   start_ts="$(date +%s)"
 
   while true; do
-    if docker exec minecraft-java sh -lc "grep -F '$message' /data/logs/latest.log" >/dev/null 2>&1; then
+    if docker exec "$TEST_CONTAINER_NAME" sh -lc "grep -F '$message' /data/logs/latest.log" >/dev/null 2>&1; then
       return 0
     fi
 
@@ -99,21 +109,11 @@ reset_loader_state() {
   prepare_tmp
 }
 
-write_env() {
-  local loader="$1"
-  local rcon_enabled="$2"
-  cat > "$TEST_ENV_FILE" <<'ENV'
-EULA=TRUE
-SERVER_TYPE=__SERVER_TYPE__
-JVM_OPTS=-Xms512M -Xmx1024M
-ENV
-  sed -i "s/__SERVER_TYPE__/${loader}/" "$TEST_ENV_FILE"
-  if [[ "$rcon_enabled" == "true" ]]; then
-    cat >> "$TEST_ENV_FILE" <<'ENV'
-RCON_ENABLED=TRUE
-RCON_PASSWORD=codex
-RCON_PORT=25575
-ENV
+require_test_env_file() {
+  if [[ ! -f "$TEST_ENV_FILE" ]]; then
+    echo "Fehler: Test-Env-Datei fehlt: $TEST_ENV_FILE" >&2
+    echo "Lege die Datei an oder passe TEST_ENV_FILE im Script an." >&2
+    exit 1
   fi
 }
 
@@ -130,12 +130,21 @@ run_loader_test() {
 
   echo "== Test: ${loader} (${label}) =="
   reset_loader_state
-  write_env "$loader" "$rcon_enabled"
+  CURRENT_SERVER_TYPE="$loader"
+  if [[ "$rcon_enabled" == "true" ]]; then
+    CURRENT_RCON_ENABLED="TRUE"
+    CURRENT_RCON_PASSWORD="codex"
+    CURRENT_RCON_PORT="25575"
+  else
+    CURRENT_RCON_ENABLED="FALSE"
+    CURRENT_RCON_PASSWORD="codex"
+    CURRENT_RCON_PORT="25575"
+  fi
   compose up -d
   wait_for_healthy 600
   test_aliases
   set +e
-  timeout 30 docker exec minecraft-java mc-cmd "say $log_marker"
+  timeout 30 docker exec "$TEST_CONTAINER_NAME" mc-cmd "say $log_marker"
   cmd_rc=$?
   set -e
   if [[ "$cmd_rc" -ne 0 && "$cmd_rc" -ne 124 ]]; then
@@ -154,7 +163,7 @@ test_aliases() {
   local aliases_joined
   aliases_joined="${ALIASES[*]}"
 
-  if ! docker exec -e CODEX_ALIASES="$aliases_joined" minecraft-java sh -lc '
+  if ! docker exec -e CODEX_ALIASES="$aliases_joined" "$TEST_CONTAINER_NAME" sh -lc '
     set -e
     for alias_name in $CODEX_ALIASES; do
       alias_path="/usr/local/bin/${alias_name}"
@@ -168,8 +177,8 @@ test_aliases() {
   fi
 }
 
+require_test_env_file
 prepare_tmp
-write_env "vanilla" "false"
 compose build
 compose down --remove-orphans || true
 
